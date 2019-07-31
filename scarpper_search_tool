@@ -1,0 +1,109 @@
+import parameters
+from time import sleep
+from selenium import webdriver
+from selenium.webdriver.common.keys import Keys
+import json
+from pymongo import MongoClient
+from scrape_linkedin import ProfileScraper
+
+
+client = MongoClient('localhost', 27017)
+db = client['linkedin']
+collection_profiles = db['profiles']
+driver = webdriver.Chrome('D:/chromedriver.exe')
+
+def connect_to_linkedin():
+    driver.get('https://www.linkedin.com/login?trk=guest_homepage-basic_nav-header-signin')
+    sleep(3)
+    username = driver.find_element_by_id('username')
+    username.send_keys(parameters.linkedin_username)
+    sleep(0.5)
+    password = driver.find_element_by_id('password')
+    password.send_keys(parameters.linkedin_password)
+    sleep(0.5)
+    sign_in_button = driver.find_element_by_xpath('//*[@type="submit"]')
+    sign_in_button.click()
+    sleep(3)
+    
+    
+def scroll_to_bottom():      
+     driver.execute_script('window.scrollTo(0, document.body.scrollHeight/16)')
+     sleep(2)
+     driver.execute_script('window.scrollTo(document.body.scrollHeight/16, document.body.scrollHeight/8)')
+     sleep(4)
+     driver.execute_script('window.scrollTo(document.body.scrollHeight/8, document.body.scrollHeight/4)')
+     sleep(4)
+     driver.execute_script('window.scrollTo(document.body.scrollHeight/4, document.body.scrollHeight/2)')
+     sleep(2)
+     driver.execute_script('window.scrollTo(document.body.scrollHeight/2, document.body.scrollHeight)')
+     sleep(1)
+   
+
+
+def search_profiles():
+    driver.get('https://www.linkedin.com/search/results/people/?origin=FACETED_SEARCH')
+    driver.maximize_window()
+    filter_button = driver.find_element_by_xpath("//button[@data-control-name='all_filters']")
+    filter_button.click()
+    sleep(2)
+    tunisia_check_box=driver.find_element_by_xpath("//label[@for='sf-geoRegion-tn:0']")
+    tunisia_check_box.click()
+    title=driver.find_element_by_xpath("//input[@id='search-advanced-title']")
+    title.send_keys('angular spring')
+    search=driver.find_element_by_xpath("//button[@data-control-name='all_filters_apply']")
+    search.click() 
+    sleep(3)
+   
+    linkedin_profiles=[]
+    linkedin_profiles_urls=[]
+    
+    
+    while not (check_if_last_page()):
+        scroll_to_bottom()
+        linkedin_profiles=driver.find_elements_by_xpath("//a[@data-control-name='search_srp_result']")
+        for item in linkedin_profiles:
+            if not('search/results' in item.get_attribute("href")):
+                linkedin_profiles_urls.append(item.get_attribute("href"))       
+        linkedin_profiles_urls = list(set(linkedin_profiles_urls)) 
+        move_to_next_page_result()    
+    linkedin_profiles_urls.remove
+    return linkedin_profiles_urls
+
+    
+def check_if_last_page():
+    elem = driver.find_element_by_xpath("//*")
+    source_code = elem.get_attribute("outerHTML")
+    
+    last_page_html_tag='artdeco-pagination__button artdeco-pagination__button--next artdeco-button artdeco-button--muted artdeco-button--icon-right artdeco-button--1 artdeco-button--tertiary artdeco-button--disabled ember-view' in source_code 
+    return last_page_html_tag
+        
+    
+def move_to_next_page_result():
+    try:
+        next_page=driver.find_element_by_xpath("//button[@class='artdeco-pagination__button artdeco-pagination__button--next artdeco-button artdeco-button--muted artdeco-button--icon-right artdeco-button--1 artdeco-button--tertiary ember-view']")
+        next_page.click()
+    except:
+        pass
+
+    
+def get_new_cookie():
+    connect_to_linkedin()
+    li_at_full_cookie = json.dumps(driver.get_cookie('li_at'))
+    cookie = json.loads(li_at_full_cookie)
+    cookie_val=cookie.get('value')
+    sleep(1)
+    driver.close()
+    return cookie_val
+    
+def scrap_profile_save_mongo(profiles):
+    with ProfileScraper(cookie=get_new_cookie()) as scraper:
+        for profile_url in profiles:
+            profile = scraper.scrape(url=profile_url)
+            scrapped_profile=profile.to_dict()
+            collection_profiles.insert_one(scrapped_profile)
+
+
+
+connect_to_linkedin()
+profiles=search_profiles()
+scrap_profile_save_mongo(profiles)
