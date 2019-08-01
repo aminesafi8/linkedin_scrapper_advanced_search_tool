@@ -69,7 +69,7 @@ def search_profiles():
         linkedin_profiles_urls = list(set(linkedin_profiles_urls)) 
         move_to_next_page_result()    
    
-    
+    print('Total profiles ==> '+str(len(linkedin_profiles_urls)))
     driver.close()
     return linkedin_profiles_urls
 
@@ -81,6 +81,14 @@ def check_if_last_page():
     last_page_html_tag='artdeco-pagination__button artdeco-pagination__button--next artdeco-button artdeco-button--muted artdeco-button--icon-right artdeco-button--1 artdeco-button--tertiary artdeco-button--disabled ember-view' in source_code 
     return last_page_html_tag
         
+
+def document_already_exists(profile_url):
+    exist  = collection_profiles.count_documents({"profile_url": profile_url})
+    if (exist!=0):
+        return True
+    else:
+        return False
+
     
 def move_to_next_page_result():
     try:
@@ -100,12 +108,21 @@ def get_new_cookie():
     return cookie_val
     
 def scrap_profile_save_mongo(profiles):
+    scrapped_profiles=0
+    ignored_profiles=0
     with ProfileScraper(cookie=parameters.cookie,scroll_increment=20) as scraper:
         for profile_url in profiles:
-            profile = scraper.scrape(url=profile_url)
-            scrapped_profile=profile.to_dict()
-            scrapped_profile.update({'profile_url':profile_url})
-            collection_profiles.insert_one(scrapped_profile)
+            if(not document_already_exists(profile_url)):
+                profile = scraper.scrape(url=profile_url)
+                scrapped_profile=profile.to_dict()
+                scrapped_profile.update({'profile_url':profile_url})
+                collection_profiles.insert_one(scrapped_profile)
+                scrapped_profiles=scrapped_profiles+1
+            else:
+                ignored_profiles=ignored_profiles+1
+    print ('scraped profiles : '+str(scrapped_profiles))
+    print ('ignored_profiles : '+str(ignored_profiles))
+                
 
 
 
@@ -118,11 +135,27 @@ scrap_profile_save_mongo(profiles)
 
 
 
+def scrap_profile_from_txt():
+    profiles = []
+    mypath="D:\\Google Drive\\5 éme\\LinkedIn Scrapper\\scrapper search tool\\"
+    f = open("results.txt", "r")
+    for line in f:
+        profiles.append(f.readline())
+    
+    f.close()
+    with ProfileScraper(cookie=parameters.cookie,scroll_increment=20) as scraper:
+        for profile_url in profiles:
+            profile = scraper.scrape(url=profile_url)
+            scrapped_profile=profile.to_dict()
+            scrapped_profile.update({'profile_url':profile_url})
+            collection_profiles.insert_one(scrapped_profile)
+
+
 
 
 
 #after populating the profiles list, we can save the result temporary in a file to scrap them later (in case of error)
-#def write_to_txt_emergency():
-#   with open('results.txt', 'w') as f:
-#      for item in profiles:
-#         f.write("%s\n" % item)
+def write_to_txt_emergency():
+   with open('to_continue.txt', 'w') as f:
+      for item in profiles:
+         f.write("%s\n" % item)
